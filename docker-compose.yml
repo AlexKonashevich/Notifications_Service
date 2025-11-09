@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: notifications
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/notifications
+      - BROKER_URL=pyamqp://guest:guest@rabbitmq//
+    depends_on:
+      - postgres
+      - rabbitmq
+    command:
+      sh -c "python init_db.py &&
+             uvicorn main:app --host 0.0.0.0 --port 8000"
+  worker:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/notifications
+      - BROKER_URL=pyamqp://guest:guest@rabbitmq//
+    depends_on:
+      - postgres
+      - rabbitmq
+    command: celery -A app.worker.celery_app worker --loglevel=info
+
+volumes:
+  postgres_data:
